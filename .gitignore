@@ -1,8 +1,38 @@
-# Machine-specific
+# OS / machine-specific
 .DS_Store
+Thumbs.db
+Desktop.ini
 *.log
 
 # On-device model/toolchain downloads (GGUFs are cached by llamadart at
 # runtime; never commit them)
 models/
 toolchains/
+
+# Environment / secrets
+.env
+.env.*
+*.local
+
+# Editor / IDE metadata (app/.gitignore has a fuller app-level list)
+.idea/
+.idea/**
+.vscode/
+*.iml
+*.ipr
+*.iws
+.flutter-plugins-dependencies
+
+# Vibe / AI coding-agent files (internal tooling, not part of the product)
+AGENTS.md
+.claude/
+CLAUDE.md
+.cursor/
+.cursorrules
+.opencode/
+opencode.json
+opencode.jsonc
+.windsurf/
+.codeium/
+.zed/
+.mcp/
