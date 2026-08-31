@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    name: analyze + unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Restore dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      # Fast, offline unit tests. The network-dependent integration tests
+      # (smoke_test, qwen_vl_test) download GGUF models from HuggingFace and
+      # are intentionally excluded from CI.
+      - name: Run unit tests
+        run: flutter test test/navigation_test.dart test/pomodoro_test.dart test/latex_syntax_test.dart
+
+  drift-sync:
+    # Confirm the committed drift codegen (app_database.g.dart) is up to date
+    # with the schema, so a drift schema change is never merged by accident.
+    name: drift codegen in sync
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs
+      - name: Fail if codegen drifted
+        run: git diff --exit-code -- lib/core/db/app_database.g.dart

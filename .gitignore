@@ -1,0 +1,8 @@
+# Machine-specific
+.DS_Store
+*.log
+
+# On-device model/toolchain downloads (GGUFs are cached by llamadart at
+# runtime; never commit them)
+models/
+toolchains/
