@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 
+import '../logging/app_logger.dart';
 import 'ai_engine.dart';
 import 'provider_config.dart';
 
@@ -84,8 +85,8 @@ class ExternalLlm {
           if (content.isNotEmpty || thinking.isNotEmpty) {
             yield ChatDelta(content: content, thinking: thinking);
           }
-        } catch (_) {
-          // Skip malformed lines.
+        } catch (e) {
+          logger.debug('Skipping malformed SSE line in external LLM stream: $line', error: e);
         }
       }
     }
@@ -146,8 +147,8 @@ class ExternalLlm {
               yield ChatDelta(content: text);
             }
           }
-        } catch (_) {
-          // Skip malformed lines.
+        } catch (e) {
+          logger.debug('Skipping malformed SSE line in Anthropic stream: $line', error: e);
         }
       }
     }

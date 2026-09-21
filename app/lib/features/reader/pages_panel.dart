@@ -3,6 +3,7 @@ import 'package:pdfrx/pdfrx.dart' as pdfrx;
 
 import '../../core/db/app_database.dart';
 import '../../core/theme/colors.dart';
+import '../../shared/widgets/loading_skeleton.dart';
 
 /// A vertical strip of page thumbnails on the left side of the PDF viewer.
 /// Tapping a thumbnail navigates the main viewer to that page.
@@ -21,14 +22,12 @@ class PagesPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!controller.isReady) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text(
-            'Loading pages…',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
+      return Container(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        padding: const EdgeInsets.all(16),
+        child: ListView.builder(
+          itemCount: 5,
+          itemBuilder: (_, _) => const PageThumbnailSkeleton(),
         ),
       );
     }

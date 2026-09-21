@@ -4391,6 +4391,14 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PlaylistsTable playlists = $PlaylistsTable(this);
   late final $PlaylistTracksTable playlistTracks = $PlaylistTracksTable(this);
   late final $SettingsTable settings = $SettingsTable(this);
+  late final Index idxChunksDocument = Index(
+    'idx_chunks_document',
+    'CREATE INDEX idx_chunks_document ON chunks (document_id)',
+  );
+  late final Index idxNotebookDocumentsDocument = Index(
+    'idx_notebook_documents_document',
+    'CREATE INDEX idx_notebook_documents_document ON notebook_documents (document_id)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4409,6 +4417,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     playlists,
     playlistTracks,
     settings,
+    idxChunksDocument,
+    idxNotebookDocumentsDocument,
   ];
 }
 

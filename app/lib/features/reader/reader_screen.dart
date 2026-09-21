@@ -9,6 +9,7 @@ import '../../core/music/player_controller.dart';
 import '../../core/settings/settings_storage.dart';
 import '../../core/theme/colors.dart';
 import '../../docs/rag_service.dart';
+import '../../shared/widgets/error_state.dart';
 import '../../study/pomodoro.dart';
 import '../notebooks/notebooks_provider.dart';
 import 'assistant_pane.dart';
@@ -31,7 +32,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     with SingleTickerProviderStateMixin {
   AnnotateTool _tool = AnnotateTool.none;
   int _selectedDocumentId = -1;
+
+  /// Bumped whenever the displayed document changes or a stuck-load retry is
+  /// issued. Keyed into [_AnnotatedPdfViewer] so every change remounts the
+  /// viewer through a reliable load path (see _viewerOf / _armStuckLoadWatch).
+  int _viewerGeneration = 0;
+  int _viewerRetries = 0;
   late final TabController _tabController;
+  late final ReadingContextNotifier _readingContext;
   final pdfrx.PdfViewerController _pdfController = pdfrx.PdfViewerController();
   final ValueNotifier<int> _currentPage = ValueNotifier<int>(1);
   bool _pagesPanelOpen = false;
@@ -41,6 +49,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _restoreLastDocument();
+
+    // Captured here so dispose() never touches `ref` (Riverpod throws when a
+    // widget uses its ref during dispose — the source of the black-window
+    // crash on reader teardown in release builds).
+    _readingContext = ref.read(readingContextProvider.notifier);
   }
 
   /// Reopens the notebook on the PDF that was open last time, so the AI
@@ -57,9 +70,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     await storage.setPref('lastOpenDoc:${widget.notebookId}', '$id');
   }
 
+  /// Safety net for the rare cold-start case where a fresh mount's initial
+  /// pdfrx load silently stalls (`_document` stays null, viewer paints blank).
+  /// pdfrx reliably (re)loads when the widget's key/ref changes, so a bounded
+  /// set of retries remounts the viewer on a fresh [PdfViewerController]
+  /// generation until the document actually opens.
+  Future<void> _armStuckLoadWatch(int generation) async {
+    await Future<void>.delayed(const Duration(milliseconds: 2500));
+    if (!mounted || generation != _viewerGeneration) return;
+    if (_pdfController.isReady || _viewerRetries >= 3) return;
+    _viewerRetries += 1;
+    setState(() {
+      _viewerGeneration += 1;
+    });
+    _armStuckLoadWatch(_viewerGeneration);
+  }
+
   @override
   void dispose() {
-    ref.read(readingContextProvider.notifier).clear();
+    _readingContext.clear();
     _tabController.dispose();
     super.dispose();
   }
@@ -81,10 +110,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Keep the Study Chat (and anything else) aware of the document the user
     // is currently reading.
     ref.listen(notebookDocumentsProvider(widget.notebookId), (_, next) {
+      if (!mounted) return;
       final list = next.value;
       if (list == null || list.isEmpty) return;
       final current = _displayedDoc(list);
       if (current == null) return;
+      // First docs emission: settle into an explicit selection instead of the
+      // passive `_displayedDoc` fallback. A passive mount never triggers a
+      // pdfrx source change, so a stalled cold-start load stays blank forever
+      // until the user manually switches documents. An explicit selection +
+      // generation key remounts the viewer through the reliable load path.
+      if (_selectedDocumentId == -1) {
+        setState(() {
+          _selectedDocumentId = current.id;
+          _viewerGeneration += 1;
+          _viewerRetries = 0;
+        });
+        _rememberDocument(current.id);
+        _armStuckLoadWatch(_viewerGeneration);
+      }
       ref.read(readingContextProvider.notifier).open(current.id, current.name);
     });
 
@@ -164,10 +208,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       body: docs.when(
         data: (value) {
           if (value.isEmpty) {
-            return const _ReaderEmpty();
+            return _ReaderEmpty(notebookId: widget.notebookId);
           }
           if (doc == null) {
-            return const _ReaderEmpty();
+            return _ReaderEmpty(notebookId: widget.notebookId);
           }
           return _TiledLayout(
             document: doc,
@@ -175,6 +219,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             notebookId: widget.notebookId,
             tabController: _tabController,
             pdfController: _pdfController,
+            viewerKey: ValueKey('viewer$_viewerGeneration:${doc.id}'),
             currentPage: _currentPage,
             pagesPanelOpen: _pagesPanelOpen,
             onPagesPanelToggle: () =>
@@ -184,8 +229,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             onPageChanged: (page) => _currentPage.value = page,
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        loading: () => const Center(
+          child: Padding(
+            padding: EdgeInsets.all(48),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Loading documents...'),
+              ],
+            ),
+          ),
+        ),
+        error: (e, st) => ErrorState(
+          error: e,
+          onRetry: () =>
+              ref.invalidate(notebookDocumentsProvider(widget.notebookId)),
+        ),
       ),
     );
   }
@@ -371,28 +432,61 @@ class _DocSwitcher extends StatelessWidget {
 }
 
 class _ReaderEmpty extends StatelessWidget {
-  const _ReaderEmpty();
+  const _ReaderEmpty({required this.notebookId});
+
+  final int notebookId;
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.picture_as_pdf_rounded, size: 44, color: CoffeeColors.cacao),
-          const SizedBox(height: 12),
-          Text(
-            'No PDFs in this notebook yet',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Add a textbook PDF when creating the notebook.',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: CoffeeColors.caramel.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Icon(Icons.picture_as_pdf_rounded,
+                  size: 40, color: CoffeeColors.caramel),
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            Text(
+              'No PDFs in this notebook yet',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontFamily: 'Fraunces',
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Import a textbook or lecture PDF to start reading, '
+              'annotating, and asking questions about it.',
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    height: 1.5,
+                  ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () =>
+                  Navigator.of(context).pushNamed('/import', arguments: notebookId),
+              style: FilledButton.styleFrom(
+                backgroundColor: CoffeeColors.caramel,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.upload_file_rounded, size: 18),
+              label: const Text('Import a document'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -405,6 +499,7 @@ class _TiledLayout extends ConsumerWidget {
     required this.notebookId,
     required this.tabController,
     required this.pdfController,
+    required this.viewerKey,
     required this.currentPage,
     required this.pagesPanelOpen,
     required this.onPagesPanelToggle,
@@ -418,6 +513,10 @@ class _TiledLayout extends ConsumerWidget {
   final int notebookId;
   final TabController tabController;
   final pdfrx.PdfViewerController pdfController;
+
+  /// Keys the PDF viewer so the reader can force a clean remount (fresh pdfrx
+  /// load) whenever the displayed document changes or a stuck load is retried.
+  final Key viewerKey;
   final ValueNotifier<int> currentPage;
   final bool pagesPanelOpen;
   final VoidCallback onPagesPanelToggle;
@@ -434,6 +533,7 @@ class _TiledLayout extends ConsumerWidget {
         document: document,
         tool: tool,
         controller: pdfController,
+        viewerKey: viewerKey,
         currentPage: currentPage,
         pagesPanelOpen: pagesPanelOpen,
         onPagesPanelToggle: onPagesPanelToggle,

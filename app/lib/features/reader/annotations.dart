@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/db/app_database.dart';
+import '../../core/logging/app_logger.dart';
 
 /// A normalized rectangle relative to a PDF page (0..1 fractions).
 class PdfRectNorm {
@@ -70,7 +71,8 @@ class AnnotationPayload {
     late final Map<String, dynamic> json;
     try {
       json = jsonDecode(row.data) as Map<String, dynamic>;
-    } catch (_) {
+    } catch (e, stackTrace) {
+      logger.warning('Failed to parse annotation payload for row ${row.id}', error: e, stackTrace: stackTrace);
       json = const {};
     }
     final rawType = (json['type'] as String?) ?? row.type;

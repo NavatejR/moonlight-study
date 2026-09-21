@@ -7,27 +7,53 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'core/logging/app_logger.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Global error hooks: in release builds an uncaught error otherwise shows
+  // nothing but a black window. Log it instead of going silent.
+  FlutterError.onError = (details) {
+    logger.error('Flutter framework error',
+        error: details.exception, stackTrace: details.stack);
+    if (!kReleaseMode) {
+      FlutterError.presentError(details);
+    }
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    logger.error('Uncaught platform error', error: error, stackTrace: stack);
+    return true;
+  };
+
+  await logger.initialize();
+
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     systemNavigationBarColor: Colors.transparent,
   ));
 
   if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
-    await windowManager.ensureInitialized();
-    const options = WindowOptions(
-      size: Size(1180, 760),
-      minimumSize: Size(760, 560),
-      center: true,
-      backgroundColor: Colors.transparent,
-      titleBarStyle: TitleBarStyle.hidden,
-      title: 'Moonlight Study',
-    );
-    await windowManager.waitUntilReadyToShow(options, () async {
-      await windowManager.show();
-      await windowManager.focus();
-    });
+    try {
+      await windowManager.ensureInitialized();
+      const options = WindowOptions(
+        size: Size(1180, 760),
+        minimumSize: Size(760, 560),
+        center: true,
+        // Opaque backing: a transparent frameless window renders BLACK if the
+        // Metal surface ever stalls (e.g. during a heavy model load), hiding
+        // the app behind an unreadable void. A solid color always shows the
+        // themed background / last frame instead.
+        backgroundColor: Color(0xFF211D19),
+        titleBarStyle: TitleBarStyle.hidden,
+        title: 'Moonlight Study',
+      );
+      await windowManager.waitUntilReadyToShow(options, () async {
+        await windowManager.show();
+        await windowManager.focus();
+      });
+    } catch (e, stackTrace) {
+      logger.error('Window initialization failed', error: e, stackTrace: stackTrace);
+    }
   }
 
   runApp(const ProviderScope(child: StudyCompanionApp()));

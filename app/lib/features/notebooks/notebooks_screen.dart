@@ -8,7 +8,9 @@ import '../../core/theme/colors.dart';
 import '../../docs/document_service.dart';
 import '../../docs/rag_service.dart';
 import '../../shared/widgets/coffee_card.dart';
-import '../../shared/widgets/coffee_mug_icon.dart';
+import '../../shared/widgets/empty_state.dart';
+import '../../shared/widgets/error_state.dart';
+import '../../shared/widgets/loading_skeleton.dart';
 import '../reader/reader_screen.dart';
 import 'notebook_library.dart';
 import 'notebooks_provider.dart';
@@ -59,16 +61,22 @@ class NotebooksScreen extends ConsumerWidget {
                 ),
               );
             },
-            loading: () => const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.all(48),
-                child: Center(child: CircularProgressIndicator()),
+            loading: () => SliverPadding(
+              padding: const EdgeInsets.all(24),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (_, i) => const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: NotebookCardSkeleton(),
+                  ),
+                  childCount: 3,
+                ),
               ),
             ),
-            error: (e, _) => SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text('Could not load notebooks: $e'),
+            error: (e, st) => SliverToBoxAdapter(
+              child: ErrorState(
+                error: e,
+                onRetry: () => ref.invalidate(notebooksProvider),
               ),
             ),
           ),
@@ -410,44 +418,7 @@ class _EmptyNotebooks extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: CoffeeCard(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          children: [
-            const CoffeeMugIcon(size: 56),
-            const SizedBox(height: 16),
-            const Text(
-              'No notebooks yet',
-              style: TextStyle(
-                fontFamily: 'Fraunces',
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Create a notebook for a textbook or chapter,\nadd its PDFs, then read + annotate + ask AI.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 13.5,
-              ),
-            ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: busy ? null : onCreate,
-              icon: busy
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add_rounded),
-              label: Text(busy ? 'Adding…' : 'Add notebook'),
-            ),
-          ],
-        ),
-      ),
+      child: EmptyNotebooks(onCreate: busy ? () {} : onCreate),
     );
   }
 }

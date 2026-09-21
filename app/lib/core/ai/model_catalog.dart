@@ -92,7 +92,7 @@ abstract final class ModelCatalog {
     name: 'Qwen2.5-1.5B',
     tagline: 'Tiny & fast. Pure text — great on low-end hardware.',
     source: ModelSource.parse(
-      'hf://Qwen/Qwen2.5-1.5B-Instruct-GGUF/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf',
+      'hf://Qwen/Qwen2.5-1.5B-Instruct-GGUF/qwen2.5-1.5b-instruct-q4_k_m.gguf',
     ),
     capabilities: const {AiCapability.chat},
     sizeLabel: '~1.0 GB',
@@ -190,4 +190,13 @@ abstract final class ModelCatalog {
 
   static ModelCatalogEntry byId(String? id) =>
       all.firstWhere((e) => e.id == id, orElse: () => qwenVl);
+
+  /// The model offered to new users. The default vision model doubles as an
+  /// OCR engine, so it's the best "first study buddy" for most machines.
+  static ModelCatalogEntry get recommendedForTypicalDevice => qwenVl;
+
+  /// Model suggestions keyed by rough device RAM, used by onboarding and the
+  /// Models screen. Kept simple: the default is always a safe pick.
+  static List<ModelCatalogEntry> recommendedForLowRam = [qwenText, smol];
+  static List<ModelCatalogEntry> recommendedForHighRam = all;
 }

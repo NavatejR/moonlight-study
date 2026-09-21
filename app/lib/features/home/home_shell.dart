@@ -31,6 +31,7 @@ class HomeShell extends ConsumerWidget {
     // happens in a separate microtask/notification, letting Riverpod settle
     // its own state before the next frame.
     ref.listen(appSectionProvider, (previous, next) {
+      if (!ref.context.mounted) return;
       if (!aiOn && next == AppSection.chat && previous != AppSection.dashboard) {
         ref.read(appSectionProvider.notifier).select(AppSection.dashboard);
       }

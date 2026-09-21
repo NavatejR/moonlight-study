@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/ai/ai_engine.dart';
 import '../core/db/app_database.dart';
+import '../core/logging/app_logger.dart';
 import '../docs/document_service.dart';
 import '../docs/ocr_service.dart';
 
@@ -66,18 +67,21 @@ class RagService {
     if (chunks.isEmpty) return;
 
     final vectors = await _embedBatch(chunks);
-    for (var i = 0; i < chunks.length; i++) {
-      await _db.into(_db.chunks).insert(
-            ChunksCompanion.insert(
-              documentId: documentId,
-              pageIndex: Value(0),
-              content: chunks[i],
-              embedding: vectors != null
-                  ? Value(encodeEmbedding(vectors[i]))
-                  : const Value(null),
-            ),
-          );
-    }
+    await _db.batch((batch) {
+      for (var i = 0; i < chunks.length; i++) {
+        batch.insert(
+          _db.chunks,
+          ChunksCompanion.insert(
+            documentId: documentId,
+            pageIndex: const Value(0),
+            content: chunks[i],
+            embedding: vectors != null
+                ? Value(encodeEmbedding(vectors[i]))
+                : const Value(null),
+          ),
+        );
+      }
+    });
   }
 
   /// Creates the document row and indexes it; returns the new id.
@@ -130,6 +134,11 @@ class RagService {
         _db.documents.id.equalsExp(_db.chunks.documentId),
       ),
     ]);
+    // Scope to the requested documents in SQL so unrelated chunks are never
+    // loaded for notebook/reader-scoped retrieval.
+    if (documentIds != null && documentIds.isNotEmpty) {
+      joined.where(_db.chunks.documentId.isIn(documentIds));
+    }
     final all = await joined.get();
 
     if (all.isEmpty) return const [];
@@ -142,7 +151,6 @@ class RagService {
     for (final row in all) {
       final chunk = row.readTable(_db.chunks);
       final doc = row.readTable(_db.documents);
-      if (documentIds != null && !documentIds.contains(doc.id)) continue;
       final emb = chunk.embedding;
 
       double score;
@@ -198,7 +206,8 @@ class RagService {
     if (!active.isEmbedding || !_ref.read(aiEnabledProvider)) return null;
     try {
       return await engine.embed(text);
-    } catch (_) {
+    } catch (e, stackTrace) {
+      logger.warning('Failed to embed query; falling back to keyword scoring', error: e, stackTrace: stackTrace);
       return null;
     }
   }
@@ -209,7 +218,8 @@ class RagService {
     final engine = _ref.read(aiEngineProvider.notifier);
     try {
       return await engine.embedBatch(texts);
-    } catch (_) {
+    } catch (e, stackTrace) {
+      logger.warning('Failed to embed batch; falling back to keyword scoring', error: e, stackTrace: stackTrace);
       return null;
     }
   }

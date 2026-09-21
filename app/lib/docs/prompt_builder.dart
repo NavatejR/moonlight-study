@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../core/logging/app_logger.dart';
 import '../docs/rag_service.dart';
 
 /// Builds grounded, citation-aware prompts for the chat model.
@@ -112,7 +113,9 @@ Example:
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
       }
-    } catch (_) {}
+    } catch (e, stackTrace) {
+      logger.debug('Failed to parse JSON from model output; returning empty', error: e, stackTrace: stackTrace);
+    }
     return const [];
   }
 }

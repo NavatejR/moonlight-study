@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../logging/app_logger.dart';
 import '../settings/settings_storage.dart';
 
 /// What is currently playing in the app-wide music player.
@@ -130,7 +131,8 @@ class MusicPlayer {
     final path = _queue[_index];
     try {
       _duration = await _player.setFilePath(path);
-    } catch (_) {
+    } catch (e, stackTrace) {
+      logger.warning('Failed to load audio track: $path', error: e, stackTrace: stackTrace);
       _duration = null;
     }
     _position = Duration.zero;

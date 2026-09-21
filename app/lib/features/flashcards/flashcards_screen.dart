@@ -6,6 +6,8 @@ import '../../core/db/app_database.dart';
 import '../../core/settings/settings_storage.dart';
 import '../../core/theme/colors.dart';
 import '../../shared/widgets/coffee_card.dart';
+import '../../shared/widgets/error_state.dart';
+import '../../shared/widgets/loading_skeleton.dart';
 import '../../study/study_actions.dart';
 import '../notebooks/notebooks_provider.dart';
 
@@ -21,11 +23,33 @@ class FlashcardsScreen extends ConsumerWidget {
       body: deck.when(
         data: (cards) => groups.when(
           data: (groups) => _FlashcardsBody(cards: cards, groups: groups),
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Error: $e')),
+          loading: () => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(48),
+              child: ListSkeleton(
+                itemBuilder: (_, _) => const FlashcardSkeleton(),
+                itemCount: 3,
+              ),
+            ),
+          ),
+          error: (e, st) => ErrorState(
+            error: e,
+            onRetry: () => ref.invalidate(flashcardGroupsProvider),
+          ),
         ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        loading: () => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(48),
+            child: ListSkeleton(
+              itemBuilder: (_, _) => const FlashcardSkeleton(),
+              itemCount: 3,
+            ),
+          ),
+        ),
+        error: (e, st) => ErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(flashcardsProvider),
+        ),
       ),
     );
   }

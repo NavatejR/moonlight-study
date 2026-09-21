@@ -19,6 +19,8 @@ class AppSettings {
     this.pomodoroMinutes = 25,
     this.liteMode = false,
     this.readerDarkMode = false,
+    this.onboardingComplete = false,
+    this.huggingFaceToken = '',
   });
 
   final String musicFolder;
@@ -33,6 +35,8 @@ class AppSettings {
   final int pomodoroMinutes;
   final bool liteMode;
   final bool readerDarkMode;
+  final bool onboardingComplete;
+  final String huggingFaceToken;
 
   AppSettings copyWith({
     String? musicFolder,
@@ -47,13 +51,16 @@ class AppSettings {
     int? pomodoroMinutes,
     bool? liteMode,
     bool? readerDarkMode,
+    bool? onboardingComplete,
+    String? huggingFaceToken,
   }) =>
       AppSettings(
         musicFolder: musicFolder ?? this.musicFolder,
         autoPlayMusic: autoPlayMusic ?? this.autoPlayMusic,
         volume: volume ?? this.volume,
         splitRatio: splitRatio ?? this.splitRatio,
-        readerFitMode: readerFitMode ?? this.readerFitMode,
+        readerFitMode: readerFitMode ??
+            this.readerFitMode,
         readingTheme: readingTheme ?? this.readingTheme,
         highlightColor: highlightColor ?? this.highlightColor,
         showCitations: showCitations ?? this.showCitations,
@@ -61,6 +68,8 @@ class AppSettings {
         pomodoroMinutes: pomodoroMinutes ?? this.pomodoroMinutes,
         liteMode: liteMode ?? this.liteMode,
         readerDarkMode: readerDarkMode ?? this.readerDarkMode,
+        onboardingComplete: onboardingComplete ?? this.onboardingComplete,
+        huggingFaceToken: huggingFaceToken ?? this.huggingFaceToken,
       );
 }
 
@@ -88,6 +97,8 @@ class SettingsStorage {
       pomodoroMinutes: int.tryParse(map['pomodoroMinutes'] ?? '') ?? 25,
       liteMode: map['liteMode'] == 'true',
       readerDarkMode: map['readerDarkMode'] == 'true',
+      onboardingComplete: map['onboardingComplete'] == 'true',
+      huggingFaceToken: map['huggingFaceToken'] ?? '',
     );
   }
 
@@ -111,6 +122,8 @@ class SettingsStorage {
     await _set('pomodoroMinutes', s.pomodoroMinutes.toString());
     await _set('liteMode', s.liteMode.toString());
     await _set('readerDarkMode', s.readerDarkMode.toString());
+    await _set('onboardingComplete', s.onboardingComplete.toString());
+    await _set('huggingFaceToken', s.huggingFaceToken);
   }
 
   /// Reads an arbitrary key/value preference from the settings table (keys

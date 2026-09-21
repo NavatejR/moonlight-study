@@ -6,6 +6,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:pdfrx/pdfrx.dart' as pdfrx;
 
 import '../core/ai/ai_engine.dart';
+import '../core/logging/app_logger.dart';
 
 /// OCR by asking the on-device vision model to transcribe rendered PDF pages.
 ///
@@ -32,6 +33,14 @@ class OcrService {
     String path, {
     void Function(int page, int total)? onProgress,
   }) async {
+    if (!_ref.read(aiEnabledProvider)) return '';
+    final active = _ref.read(activeModelProvider);
+    if (!active.isVision) return '';
+    // Load the vision model on demand (single-flight shares the startup/chat
+    // load task). If it still isn't ready, skip OCR gracefully for this run.
+    if (_ref.read(aiEngineProvider).status != AiStatus.ready) {
+      await _ref.read(aiEngineProvider.notifier).ensureModelLoaded();
+    }
     if (!_visionReady) return '';
     pdfrx.PdfDocument? document;
     try {
@@ -47,7 +56,8 @@ class OcrService {
         }
       }
       return buffer.toString();
-    } catch (_) {
+    } catch (e, stackTrace) {
+      logger.warning('OCR failed for $path', error: e, stackTrace: stackTrace);
       return '';
     } finally {
       await document?.dispose();

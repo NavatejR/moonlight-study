@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart' as pdfrx;
 
 import '../../core/db/app_database.dart';
+import '../../core/logging/app_logger.dart';
 import '../../core/settings/settings_storage.dart';
 import '../../core/theme/colors.dart';
 import 'annotations.dart';
@@ -28,6 +29,7 @@ class PdfPane extends ConsumerWidget {
     required this.document,
     required this.tool,
     required this.controller,
+    required this.viewerKey,
     required this.onToolChanged,
     required this.onSelectionAction,
     required this.pagesPanelOpen,
@@ -39,6 +41,10 @@ class PdfPane extends ConsumerWidget {
   final Document document;
   final AnnotateTool tool;
   final pdfrx.PdfViewerController controller;
+
+  /// Applied to the pdfrx viewer so the reader can force a clean remount on
+  /// document change / stuck-load retry. See reader_screen.dart.
+  final Key viewerKey;
   final ValueChanged<AnnotateTool> onToolChanged;
   final void Function(SelectionRequest request, String action) onSelectionAction;
   final bool pagesPanelOpen;
@@ -91,17 +97,20 @@ class PdfPane extends ConsumerWidget {
                 ),
               ],
               Expanded(
-                child: _AnnotatedPdfViewer(
-                  document: document,
-                  tool: tool,
-                  controller: controller,
-                  highlightColor: settings.highlightColor,
-                  annotations: annotations,
-                  fitMode: settings.readerFitMode,
-                  darkReading: darkReading,
-                  onSelectionAction: onSelectionAction,
-                  onToolChanged: onToolChanged,
-                  onPageChanged: onPageChanged,
+                child: KeyedSubtree(
+                  key: viewerKey,
+                  child: _AnnotatedPdfViewer(
+                    document: document,
+                    tool: tool,
+                    controller: controller,
+                    highlightColor: settings.highlightColor,
+                    annotations: annotations,
+                    fitMode: settings.readerFitMode,
+                    darkReading: darkReading,
+                    onSelectionAction: onSelectionAction,
+                    onToolChanged: onToolChanged,
+                    onPageChanged: onPageChanged,
+                  ),
                 ),
               ),
             ],
@@ -619,8 +628,9 @@ class _AnnotatedPdfViewerState extends ConsumerState<_AnnotatedPdfViewer> {
       );
       await delegate.clearTextSelection();
       _toast('Text highlighted.');
-    } catch (e) {
-      _toast('Highlight failed: $e');
+    } catch (e, stackTrace) {
+      logger.warning('Highlight saving failed', error: e, stackTrace: stackTrace);
+      _toast('Highlight failed. Please try again.');
     } finally {
       _highlightInFlight = false;
     }

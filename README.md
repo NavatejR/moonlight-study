@@ -217,6 +217,15 @@ them, otherwise RAG falls back to keyword scoring.
 
 ## Project structure
 
+- `app/` — the Flutter application (`lib/`, `test/`, platform runners)
+- `docs/` — [architecture](docs/architecture.md), [development](docs/development.md),
+  [user guide](docs/user-guide.md), [releasing](docs/releasing.md),
+  [auto-update](docs/auto-update.md), [performance](docs/performance.md),
+  and the AI's [soul](docs/soul.md)
+- `models/`, `toolchains/` — empty placeholders (GGUF models are downloaded by
+  `llamadart` at runtime and never committed)
+- `.github/` — CI, issue templates, contributing, security policy
+
 ```
 app/
 ├─ lib/
@@ -233,7 +242,8 @@ app/
 ```
 
 A deeper architecture reference (including cross-feature gotchas) lives in
-[`AGENTS.md`](AGENTS.md).
+[`AGENTS.md`](AGENTS.md) and [`docs/architecture.md`](docs/architecture.md), and
+the contributor workflow lives in [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
 ---
 
@@ -255,7 +265,8 @@ A deeper architecture reference (including cross-feature gotchas) lives in
 
 - `.github/workflows/ci.yml` runs on every push / PR to `main`:
   - `flutter analyze` (0 issues required)
-  - fast, offline unit tests
+  - the fast, offline unit test suite (`test/*_test.dart` minus the two
+    model-download tests)
   - a **drift codegen in-sync** check that fails if `app_database.g.dart`
     drifts from the schema
 - The network-dependent smoke/OCR integration tests are intentionally excluded
@@ -272,6 +283,8 @@ workflow, and style. Be kind — read the [Code of Conduct](.github/CODE_OF_COND
 
 ## Roadmap
 
+- [x] Documentation (architecture, development, user guide, contributing)
+- [x] Auto-update via GitHub Releases (check + download; no silent self-update)
 - [ ] Screenshots for the README
 - [ ] Page-aware chunking (chunks currently carry `pageIndex: 0`)
 - [ ] More verified-public reasoning & vision model sources

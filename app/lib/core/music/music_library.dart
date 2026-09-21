@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;
 
 import '../db/app_database.dart';
+import '../logging/app_logger.dart';
 import '../settings/settings_storage.dart';
 
 /// A music track discovered on disk.
@@ -78,7 +79,8 @@ class MusicLibraryService {
     try {
       final duration = await player.setFilePath(path);
       return duration;
-    } catch (_) {
+    } catch (e, stackTrace) {
+      logger.debug('Failed to probe audio track: $path', error: e, stackTrace: stackTrace);
       return null;
     } finally {
       await player.dispose();

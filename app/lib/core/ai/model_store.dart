@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../ai/ai_engine.dart';
 import '../ai/model_catalog.dart';
 import '../ai/provider_config.dart';
+import '../logging/app_logger.dart';
 import '../settings/settings_storage.dart';
 /// Persists user choices about models and AI.
 class ModelStore {
@@ -61,9 +63,27 @@ class SettingsLoader {
     // folder's security scope is re-armed before any screen reads them.
     unawaited(ref.read(settingsProvider.future));
 
-    // Eagerly load the active model so chat/study features are ready.
+    // Defer the active-model load until after the first frame (plus a short
+    // grace period) so the window paints instantly and the heavy llama load
+    // never stalls launch. Chat/OCR/embedding call sites share the same
+    // single-flight ensureModelLoaded() (see ai_engine.dart), so nothing
+    // regresses if the model is needed before the timer fires.
     if (enabled) {
-      ref.read(aiEngineProvider.notifier).loadActiveModel();
+      final notifier = ref.read(aiEngineProvider.notifier);
+      unawaited(_scheduleDeferredLoad(notifier));
+    }
+  }
+
+  /// Loads the model after the first frame + a grace delay. Fire-and-forget;
+  /// failures are non-fatal and any later model use retries the load.
+  Future<void> _scheduleDeferredLoad(AiEngineNotifier notifier) async {
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 2000));
+      if (!ref.context.mounted) return;
+      await notifier.ensureModelLoaded();
+    } catch (e, stackTrace) {
+      logger.warning('Deferred model load skipped', error: e, stackTrace: stackTrace);
     }
   }
 }

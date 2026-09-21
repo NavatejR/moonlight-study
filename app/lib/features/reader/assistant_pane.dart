@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ai/ai_engine.dart';
 import '../../core/ai/chat_backend.dart';
+import '../../core/errors/error_handler.dart';
+import '../../core/logging/app_logger.dart';
 import '../../core/memory/memory_capture.dart';
 import '../../core/memory/memory_service.dart';
 import '../../core/theme/colors.dart';
@@ -202,8 +204,9 @@ class ReaderAssistantNotifier extends FamilyNotifier<List<AssistantEntry>, int> 
           assistant: buffer.toString(),
         );
       }
-    } catch (e) {
-      addAssistant('Error: $e');
+    } catch (e, stackTrace) {
+      logger.error('Reader assistant failed', error: e, stackTrace: stackTrace);
+      addAssistant('Sorry, I ran into an issue: ${ErrorHandler.getUserMessage(e)}');
     }
   }
 

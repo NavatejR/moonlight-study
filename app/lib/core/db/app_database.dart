@@ -21,6 +21,7 @@ class Documents extends Table {
 }
 
 /// One chunk of extracted text from a document, with its embedding.
+@TableIndex(name: 'idx_chunks_document', columns: {#documentId})
 class Chunks extends Table {
   IntColumn get id => integer().autoIncrement()();
   IntColumn get documentId => integer().references(Documents, #id)();
@@ -37,6 +38,7 @@ class Notebooks extends Table {
 }
 
 /// Which notebook a document belongs to.
+@TableIndex(name: 'idx_notebook_documents_document', columns: {#documentId})
 class NotebookDocuments extends Table {
   IntColumn get notebookId => integer().references(Notebooks, #id)();
   IntColumn get documentId => integer().references(Documents, #id)();
@@ -149,10 +151,13 @@ class Settings extends Table {
   ],
 )
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(_openConnection());
+  /// Creates an app database. Pass an [executor] to override the default
+  /// file-backed connection (e.g. `NativeDatabase.memory()` in tests).
+  AppDatabase([QueryExecutor? executor])
+      : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -177,6 +182,14 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 4) {
             await m.createTable(memories);
+          }
+          // Indexes speed up chunk deletes (re-index) and SQL-scoped
+          // retrieval. New databases get them via the schema's @TableIndex;
+          // existing databases create them here. Using the generated Index
+          // objects keeps the DDL identical to a fresh install.
+          if (from < 5) {
+            await m.createIndex(idxChunksDocument);
+            await m.createIndex(idxNotebookDocumentsDocument);
           }
         },
       );

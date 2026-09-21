@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.studycompanion" "\0"
-            VALUE "FileDescription", "study_companion" "\0"
+            VALUE "CompanyName", "Navatej Ratnan" "\0"
+            VALUE "FileDescription", "Moonlight Study" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "study_companion" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.studycompanion. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Navatej Ratnan. All rights reserved." "\0"
             VALUE "OriginalFilename", "study_companion.exe" "\0"
-            VALUE "ProductName", "study_companion" "\0"
+            VALUE "ProductName", "Moonlight Study" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

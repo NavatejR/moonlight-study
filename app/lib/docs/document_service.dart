@@ -6,6 +6,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart' as pdfrx;
 
+import '../core/logging/app_logger.dart';
+
 /// A document imported into a notebook, with extracted text.
 class ImportedDocument {
   const ImportedDocument({
@@ -44,8 +46,8 @@ class DocumentService {
             pdfs.add(entity.path);
           }
         }
-      } on FileSystemException {
-        // Skip unreadable subfolders.
+      } on FileSystemException catch (e) {
+        logger.warning('Skipping unreadable subfolder: ${dir.path}', error: e);
       }
     }
     pdfs.sort();
@@ -129,7 +131,8 @@ class DocumentService {
       }
       await document.dispose();
       return buffer.toString();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      logger.warning('Failed to extract text from ${doc.filePath}', error: e, stackTrace: stackTrace);
       return '';
     }
   }

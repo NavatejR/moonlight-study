@@ -3,13 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/ai/model_store.dart';
 import 'core/db/app_database.dart';
+import 'core/logging/app_logger.dart';
 import 'core/memory/memory_service.dart';
 import 'core/settings/settings_storage.dart';
 import 'core/state/theme_mode.dart';
 import 'core/theme/app_theme.dart';
+import 'core/updates/update_service.dart';
 import 'docs/data_repair.dart';
 import 'docs/rag_service.dart';
 import 'features/home/home_shell.dart';
+import 'features/onboarding/onboarding_screen.dart';
 
 /// Root app. Wraps everything in a [ProviderScope] for state management.
 class StudyCompanionApp extends ConsumerWidget {
@@ -20,6 +23,8 @@ class StudyCompanionApp extends ConsumerWidget {
     // Restore persisted settings (AI on/off + active model) once.
     _bootstrap(ref);
 
+    final settings = ref.watch(settingsProvider);
+
     return MaterialApp(
       title: 'Moonlight Study',
       debugShowCheckedModeBanner: false,
@@ -28,16 +33,24 @@ class StudyCompanionApp extends ConsumerWidget {
       themeMode: ref.watch(themeModeProvider)
           ? ThemeMode.dark
           : ThemeMode.light,
-      home: const HomeShell(),
+      home: settings.maybeWhen(
+        data: (s) =>
+            s.onboardingComplete ? const HomeShell() : const OnboardingScreen(),
+        orElse: () => const HomeShell(),
+      ),
     );
   }
 
-    void _bootstrap(WidgetRef ref) {
+  void _bootstrap(WidgetRef ref) {
     if (_bootstrapped) return;
     _bootstrapped = true;
+
+    logger.info('App bootstrapping started');
+
     final loader = SettingsLoader(ref);
     loader.load();
     _restoreMemoryToggle(ref);
+
     // One-time startup repair: dedupe document rows and re-index any PDF that
     // has no chunks (adding OCR'd text when the embedded text is missing).
     Future<void>(() async {
@@ -45,8 +58,21 @@ class StudyCompanionApp extends ConsumerWidget {
         final db = ref.read(appDatabaseProvider);
         final rag = ref.read(ragServiceProvider);
         await repairLibrary(db, rag);
-      } catch (_) {
+        logger.info('Library repair completed successfully');
+      } catch (e, stackTrace) {
+        logger.error('Library repair failed (best-effort, non-fatal)', error: e, stackTrace: stackTrace);
         // Repair is best-effort; the per-document Re-index action covers it.
+      }
+    });
+
+    // One-time background update check (non-fatal; surfaced in Settings).
+    // Deliberately quiet on startup — a banner/nag can come later.
+    Future<void>(() async {
+      try {
+        await ref.read(updateCheckProvider.notifier).runCheck();
+      } catch (e, stackTrace) {
+        // Offline or feed unreachable; Settings retry covers it.
+        logger.warning('Background update check failed', error: e, stackTrace: stackTrace);
       }
     });
   }
@@ -62,7 +88,8 @@ Future<void> _restoreMemoryToggle(WidgetRef ref) async {
     if (stored != null) {
       ref.read(memoriesEnabledProvider.notifier).set(stored == 'true');
     }
-  } catch (_) {
+  } catch (e, stackTrace) {
     // Best-effort; default stays on.
+    logger.warning('Failed to restore memory toggle', error: e, stackTrace: stackTrace);
   }
 }

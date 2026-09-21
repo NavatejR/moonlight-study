@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/music/music_folder.dart';
 import '../../core/music/music_library.dart';
 import '../../core/memory/memory_service.dart';
 import '../../core/settings/settings_storage.dart';
 import '../../core/theme/colors.dart';
+import '../../core/updates/update_service.dart';
 import '../../shared/widgets/coffee_card.dart';
 import '../../study/pomodoro.dart';
+import '../onboarding/onboarding_screen.dart';
+import 'logs_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -196,6 +200,8 @@ class _SettingsBody extends ConsumerWidget {
                       .read(settingsProvider.notifier)
                       .apply((s) => s.copyWith(liteMode: v)),
                 ),
+                const Divider(height: 24),
+                _HuggingFaceTokenField(settings: settings),
               ],
             ),
           ),
@@ -222,9 +228,115 @@ class _SettingsBody extends ConsumerWidget {
               },
             ),
           ),
+          const SizedBox(height: 24),
+          _SectionHeader('SUPPORT'),
+          CoffeeCard(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.touch_app_outlined),
+                  title: const Text('Replay tutorial'),
+                  subtitle: const Text('See the welcome tour again'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const OnboardingScreen(),
+                    ),
+                  ),
+                ),
+                const Divider(height: 16),
+                ListTile(
+                  leading: const Icon(Icons.article_outlined),
+                  title: const Text('View logs'),
+                  subtitle: const Text('Inspect app logs for troubleshooting'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const LogsScreen()),
+                  ),
+                ),
+                const Divider(height: 16),
+                const _UpdateCheckTile(),
+              ],
+            ),
+          ),
         ],
       ),
     );
+  }
+}
+
+class _UpdateCheckTile extends ConsumerWidget {
+  const _UpdateCheckTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(updateCheckProvider);
+
+    String subtitle;
+    Widget trailing = const Icon(Icons.chevron_right);
+    VoidCallback? onTap;
+
+    if (async.isLoading) {
+      subtitle = 'Checking for updates…';
+      trailing = const SizedBox(
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    } else if (async.hasError || async.value?.status == UpdateStatus.checkFailed) {
+      subtitle = async.value?.error ??
+          'Could not reach the update feed. Tap to retry.';
+      onTap = () async {
+        await ref.read(updateCheckProvider.notifier).runCheck();
+        if (!context.mounted) return;
+        _showUpdateResult(context, ref.read(updateCheckProvider).value);
+      };
+    } else if (async.value?.hasUpdate ?? false) {
+      final result = async.value!;
+      subtitle = 'Version ${result.latestVersion} is available';
+      trailing = const Icon(Icons.download_outlined);
+      onTap = () => _openDownload(context, result.downloadUrl);
+    } else {
+      subtitle = 'You\u2019re on the latest version';
+    }
+
+    return ListTile(
+      leading: const Icon(Icons.system_update_alt_outlined),
+      title: const Text('Check for updates'),
+      subtitle: Text(subtitle),
+      trailing: trailing,
+      onTap: onTap,
+    );
+  }
+
+  void _showUpdateResult(BuildContext context, UpdateCheckResult? result) {
+    if (result == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(result.hasUpdate
+            ? 'Update ${result.latestVersion} is available.'
+            : 'You\u2019re on the latest version.'),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+    if (result.hasUpdate) _openDownload(context, result.downloadUrl);
+  }
+
+  Future<void> _openDownload(BuildContext context, String? url) async {
+    if (url == null) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !(uri.scheme == 'https' || uri.scheme == 'http')) {
+      return;
+    }
+    if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Could not open the link.')));
+    }
   }
 }
 
@@ -473,6 +585,125 @@ class _MemoryCard extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Hugging Face access token field. Some popular models live behind gated
+/// repositories (e.g. Llama, Qwen3); entering a read token here lets those
+/// downloads authenticate. Optional for all public catalog models.
+class _HuggingFaceTokenField extends ConsumerStatefulWidget {
+  const _HuggingFaceTokenField({required this.settings});
+
+  final AppSettings settings;
+
+  @override
+  ConsumerState<_HuggingFaceTokenField> createState() =>
+      _HuggingFaceTokenFieldState();
+}
+
+class _HuggingFaceTokenFieldState
+    extends ConsumerState<_HuggingFaceTokenField> {
+  late final TextEditingController _controller;
+  bool _obscured = true;
+  bool _saved = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.settings.huggingFaceToken);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    ref.read(settingsProvider.notifier).apply(
+          (s) => s.copyWith(huggingFaceToken: _controller.text.trim()),
+        );
+    setState(() => _saved = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Hugging Face token saved')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Hugging Face token (optional)',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            if (!_saved) ...[
+              const SizedBox(width: 8),
+              Text(
+                'unsaved',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.error,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'For gated model repositories. Get a read token from '
+          'huggingface.co/settings/tokens — never shares data; stays on your machine.',
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                obscureText: _obscured,
+                onChanged: (_) => setState(() => _saved = false),
+                decoration: InputDecoration(
+                  hintText: 'hf_...',
+                  isDense: true,
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                      size: 18,
+                    ),
+                    onPressed: () => setState(() => _obscured = !_obscured),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            FilledButton(
+              onPressed: _saved ? null : _save,
+              style: FilledButton.styleFrom(
+                backgroundColor: CoffeeColors.caramel,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

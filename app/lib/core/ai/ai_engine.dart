@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:llamadart/llamadart.dart';
 
+import '../errors/error_handler.dart';
+import '../logging/app_logger.dart';
+import '../settings/settings_storage.dart';
 import 'model_catalog.dart';
 import 'soul.dart';
 
@@ -30,6 +33,7 @@ class AiEngineNotifier extends Notifier<AiEngineState> {
   LlamaEngine? _engine;
   ChatSession? _session;
   StreamSubscription<LlamaCompletionChunk>? _subscription;
+  Future<void>? _loadTask;
 
   @override
   AiEngineState build() {
@@ -43,7 +47,26 @@ class AiEngineNotifier extends Notifier<AiEngineState> {
   bool get _enabled => ref.read(aiEnabledProvider);
 
   /// Loads the currently selected model (from [activeModelProvider]).
-  Future<void> loadActiveModel() async {
+  /// Single-flight: concurrent callers (startup, chat, OCR, embeddings) all
+  /// await the same in-flight load instead of loading the model twice.
+  Future<void> loadActiveModel() => ensureModelLoaded();
+
+  /// Ensures the active model is loaded, deduplicating concurrent requests.
+  /// A failed load clears the guard so the next caller can retry. Safe to call
+  /// at any time — after startup, from chat/OCR/embeddings, or from the Models
+  /// screen.
+  Future<void> ensureModelLoaded() {
+    if (_engine != null && _session != null) return Future<void>.value();
+    final inFlight = _loadTask;
+    if (inFlight != null) return inFlight;
+    final task = _loadActiveModel().whenComplete(() {
+      _loadTask = null;
+    });
+    _loadTask = task;
+    return task;
+  }
+
+  Future<void> _loadActiveModel() async {
     if (!_enabled) {
       await unload();
       return;
@@ -55,9 +78,14 @@ class AiEngineNotifier extends Notifier<AiEngineState> {
     );
     try {
       final engine = LlamaEngine(LlamaBackend());
+      final token = ref.read(settingsProvider).value?.huggingFaceToken;
+      final options = token != null && token.isNotEmpty
+          ? ModelLoadOptions(bearerToken: token)
+          : ModelLoadOptions.defaults;
       await engine.loadModelSource(
         entry.source,
         modelParams: const ModelParams(contextSize: 4096, gpuLayers: 0),
+        options: options,
         onProgress: (progress) {
           final fraction = progress.fraction;
           if (fraction != null) {
@@ -71,7 +99,10 @@ class AiEngineNotifier extends Notifier<AiEngineState> {
       );
       if (entry.capabilities.contains(AiCapability.vision) &&
           entry.projectorSource != null) {
-        await engine.loadMultimodalProjectorSource(entry.projectorSource!);
+        await engine.loadMultimodalProjectorSource(
+          entry.projectorSource!,
+          options: options,
+        );
       }
       _engine = engine;
       _session = ChatSession(
@@ -82,11 +113,14 @@ class AiEngineNotifier extends Notifier<AiEngineState> {
         status: AiStatus.ready,
         activeName: entry.name,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      logger.error('Failed to load model ${entry.name}',
+          error: e, stackTrace: stackTrace);
+
       state = AiEngineState(
         status: AiStatus.error,
         activeName: entry.name,
-        error: '$e',
+        error: ErrorHandler.getUserMessage(e),
       );
       await _disposeEngine();
     }
@@ -175,7 +209,8 @@ class AiEngineNotifier extends Notifier<AiEngineState> {
     if (engine == null || !_enabled) return null;
     try {
       return await engine.embed(text);
-    } catch (_) {
+    } catch (e, stackTrace) {
+      logger.warning('Embedding failed (falling back to keyword scoring)', error: e, stackTrace: stackTrace);
       return null;
     }
   }
@@ -186,7 +221,8 @@ class AiEngineNotifier extends Notifier<AiEngineState> {
     if (engine == null || !_enabled) return null;
     try {
       return await engine.embedBatch(texts);
-    } catch (_) {
+    } catch (e, stackTrace) {
+      logger.warning('Batch embedding failed (falling back to keyword scoring)', error: e, stackTrace: stackTrace);
       return null;
     }
   }
@@ -197,9 +233,12 @@ class AiEngineNotifier extends Notifier<AiEngineState> {
     _session = null;
     try {
       await _engine?.dispose();
-    } catch (_) {}
+    } catch (e, stackTrace) {
+      logger.warning('Failed to dispose engine during unload', error: e, stackTrace: stackTrace);
+    }
     _engine = null;
     state = const AiEngineState(status: AiStatus.idle);
+    logger.info('Model unloaded');
   }
 
   Future<void> _disposeEngine() async {
@@ -207,7 +246,9 @@ class AiEngineNotifier extends Notifier<AiEngineState> {
     _session = null;
     try {
       await _engine?.dispose();
-    } catch (_) {}
+    } catch (e, stackTrace) {
+      logger.warning('Failed to dispose engine after error', error: e, stackTrace: stackTrace);
+    }
     _engine = null;
   }
 }
