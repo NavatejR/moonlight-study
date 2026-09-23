@@ -8,9 +8,10 @@ Desktop.ini
 *.log
 
 # On-device model/toolchain downloads (GGUFs are cached by llamadart at
-# runtime; never commit them)
-models/
-toolchains/
+# runtime; never commit them). Root-anchored so app/lib/features/models/ —
+# the Models screen source — is still tracked.
+/models/
+/toolchains/
 
 # Environment / secrets
 .env
