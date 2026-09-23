@@ -18,7 +18,28 @@ Production macOS artifacts are signed, notarized, and shipped as a drag-to-
     --password "app-specific-password"
   ```
 
-## Build once, sign + notarize
+## CI release pipeline
+
+Pushing a tag matching `v*` (e.g. `v1.0.0`) triggers
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which on a
+`macos-latest` runner:
+
+1. Runs the same gates as regular CI — `flutter analyze` and the offline unit
+test suite — so a release can never go out broken.
+2. Builds the DMG with `SKIP_NOTARY=1 ./scripts/build_macos_release.sh`
+(ad-hoc signing, no Apple Developer cert required).
+3. Publishes a GitHub Release on the tag with the DMG attached (the app's
+built-in updater keys off the `.dmg` asset, so direct download links work).
+
+Until Developer ID signing secrets (`APPLE_CERTIFICATE_P12`,
+`APPLE_CERTIFICATE_PASSWORD`, notarytool keychain profile) are added as repo
+secrets, artifacts are **unsigned/ad-hoc** — see the Gatekeeper note in the
+README's [Download](README.md#download) section.
+
+## Local notarized releases
+
+For a signed, notarized DMG built on your own machine, run the script
+locally; the background is in [architecture](architecture.md).
 
 ```bash
 cd app

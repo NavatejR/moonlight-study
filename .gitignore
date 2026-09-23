@@ -1,5 +1,8 @@
 # OS / machine-specific
 .DS_Store
+
+# Freebuff workspace metadata (local tooling)
+.freebuff/
 Thumbs.db
 Desktop.ini
 *.log

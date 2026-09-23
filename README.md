@@ -12,6 +12,7 @@ required.
 
 [![Flutter](https://img.shields.io/badge/Flutter-3+-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![CI](https://img.shields.io/badge/CI-github%20actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/NavatejR/moonlight-study?logo=github&logoColor=white)](https://github.com/NavatejR/moonlight-study/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%E2%80%A2%20Windows%20%E2%80%A2%20Linux%20%E2%80%A2%20Android%20%E2%80%A2%20iOS-lightgrey)]()
 [![Local-first](https://img.shields.io/badge/privacy-local--first-success?logo=privacytools.io&logoColor=white)]()
@@ -155,6 +156,19 @@ flowchart LR
 
 ---
 
+## Download
+
+Grab the latest signed-off DMG from
+[**GitHub Releases**](https://github.com/NavatejR/moonlight-study/releases/latest)
+and drag **Moonlight Study** into `/Applications`.
+
+> **First launch on macOS:** current builds are **unsigned/ad-hoc**, so
+> Gatekeeper shows a warning. Right-click the app → **Open** → **Open** to
+> allow it once, or clear the quarantine flag with `xattr -cr "/Applications/Moonlight Study.app"`.
+> Models are downloaded on first use — see the note below.
+
+---
+
 ## Getting started
 
 ### Prerequisites
@@ -167,8 +181,8 @@ flowchart LR
 ### Clone & run
 
 ```bash
-git clone <your-fork-or-upstream-url>.git
-cd <repo>/app
+git clone git@github.com:NavatejR/moonlight-study.git
+cd moonlight-study/app
 flutter pub get
 flutter run -d macos    # or windows / linux / android / ios
 ```
@@ -285,6 +299,7 @@ workflow, and style. Be kind — read the [Code of Conduct](.github/CODE_OF_COND
 
 - [x] Documentation (architecture, development, user guide, contributing)
 - [x] Auto-update via GitHub Releases (check + download; no silent self-update)
+- [x] Tag-triggered CI release pipeline (`v*` tags → macOS DMG on GitHub Releases)
 - [ ] Screenshots for the README
 - [ ] Page-aware chunking (chunks currently carry `pageIndex: 0`)
 - [ ] More verified-public reasoning & vision model sources

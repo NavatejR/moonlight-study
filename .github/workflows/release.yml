@@ -1,0 +1,105 @@
+name: Release
+
+# Cutting a release: bump `version:` in app/pubspec.yaml (if needed), commit,
+# then push a tag:  git tag v1.2.3 && git push origin v1.2.3
+#
+# This workflow re-runs the same quality gates as CI, builds the macOS DMG via
+# scripts/build_macos_release.sh (ad-hoc signed; see docs/releasing.md), and
+# publishes a GitHub Release with the DMG attached. The in-app update checker
+# keys off the `.dmg` asset of the latest release, so always attach it.
+#
+# Until Developer ID signing/notarization secrets are configured, artifacts
+# are unsigned — documented in the README's Download section.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos-dmg:
+    name: macOS DMG (${{ github.ref_name }})
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read app version from pubspec
+        id: version
+        run: |
+          VERSION="$(grep -m1 '^version:' pubspec.yaml | sed -E 's/version: ([^+]*).*/\1/')"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "App version: ${VERSION}"
+
+      # Pinned to the SDK the repo is verified against; bump alongside
+      # app/pubspec.yaml's `environment: sdk` constraint.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.5
+          cache: true
+
+      - name: Restore dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      # Fast, offline unit tests (smoke_test / qwen_vl_test download GGUF
+      # models from HuggingFace and are intentionally excluded).
+      - name: Run unit tests
+        run: flutter test test/navigation_test.dart test/pomodoro_test.dart test/latex_syntax_test.dart test/error_handler_test.dart test/model_catalog_test.dart test/app_settings_test.dart test/chunking_test.dart test/rag_keyword_test.dart test/onboarding_test.dart test/shared_widgets_test.dart test/update_service_test.dart test/db_migration_test.dart test/reader_pdf_load_test.dart
+
+      # Ad-hoc signed (SKIP_NOTARY=1): no Apple cert needed on the runner.
+      # Produces dist/Moonlight Study-<version>.dmg
+      - name: Build DMG
+        run: SKIP_NOTARY=1 ./scripts/build_macos_release.sh
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Moonlight-Study-${{ steps.version.outputs.version }}-macos
+          path: app/dist/*.dmg
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Moonlight Study ${{ steps.version.outputs.version }}
+          files: app/dist/*.dmg
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            **Moonlight Study ${{ steps.version.outputs.version }}** — a local, offline AI study companion with a coffee + lo-fi soul.
+
+            ## Install (macOS)
+            1. Download **Moonlight Study-${{ steps.version.outputs.version }}.dmg** below.
+            2. Open the DMG and drag **Moonlight Study** into **Applications**.
+            3. First launch: right-click the app → **Open** → **Open** (one time only).
+
+            > **Unsigned build notice.** This artifact is ad-hoc signed, so macOS
+            > Gatekeeper may warn that the app "cannot be verified". That is
+            > expected until Developer ID notarization is wired up — see the
+            > [Download section of the README](https://github.com/${{ github.repository }}#download).
+            > To clear the warning from a terminal:
+            > `xattr -cr "/Applications/Moonlight Study.app"`
+
+            ## First run
+            - The AI runs **100% on-device** (embedded llama.cpp). On first use the
+              app downloads a small GGUF model of your choice from the **Models**
+              screen (a few hundred MB, cached locally).
+            - Everything else — documents, notes, flashcards, memory — stays local.
+
+            ## What's inside
+            See the [README](https://github.com/${{ github.repository }}#readme) for
+            features, the model catalog, and platform requirements.
