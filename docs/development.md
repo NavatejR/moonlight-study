@@ -10,7 +10,7 @@ Everything runs from the `app/` folder.
 | Run (desktop) | `flutter run -d macos` / `-d windows` / `-d linux` |
 | Run (mobile) | `flutter run -d android` / `-d ios` |
 | Lint + typecheck | `flutter analyze` (0 issues is the CI requirement) |
-| Fast unit tests | `flutter test test/error_handler_test.dart test/model_catalog_test.dart test/app_settings_test.dart test/chunking_test.dart test/rag_keyword_test.dart test/onboarding_test.dart test/shared_widgets_test.dart test/navigation_test.dart test/pomodoro_test.dart test/latex_syntax_test.dart` |
+| Fast unit tests | `flutter test test/error_handler_test.dart test/model_catalog_test.dart test/app_settings_test.dart test/chunking_test.dart test/rag_keyword_test.dart test/onboarding_test.dart test/shared_widgets_test.dart test/navigation_test.dart test/pomodoro_test.dart test/latex_syntax_test.dart test/update_service_test.dart test/db_migration_test.dart` |
 | Drift codegen | `dart run build_runner build --delete-conflicting-outputs` |
 | Regenerate app icons | `dart run tool/generate_logo.dart` (writes macOS/iOS/Android/Windows/Linux sets — never hand-edit icon PNGs) |
 | Regenerate sample PDF | `dart run tool/generate_sample_pdf.dart` (recreates `assets/docs/getting_started.pdf`) |
@@ -18,6 +18,12 @@ Everything runs from the `app/` folder.
 > **Slow tests**: `test/smoke_test.dart` and `test/qwen_vl_test.dart` download
 > GGUF models from HuggingFace (10–15 min, network-dependent). They are not a
 > quick verification and are excluded from CI.
+>
+> **Native-library test**: `test/reader_pdf_load_test.dart` mounts a real
+> `pdfrx` viewer and only passes where the native pdfium library loads
+> reliably under `runAsync` (fine on dev machines, flaky on hosted CI
+> runners). It is excluded from CI and the release pipeline; run it locally
+> after touching the reader's load machinery.
 
 ## Drift schema changes
 
