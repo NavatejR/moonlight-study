@@ -162,9 +162,11 @@ Grab the latest signed-off DMG from
 [**GitHub Releases**](https://github.com/NavatejR/moonlight-study/releases/latest)
 and drag **Moonlight Study** into `/Applications`.
 
-> **First launch on macOS:** current builds are **unsigned/ad-hoc**, so
-> Gatekeeper shows a warning. Right-click the app → **Open** → **Open** to
-> allow it once, or clear the quarantine flag with `xattr -cr "/Applications/Moonlight Study.app"`.
+> **First launch on macOS:** releases built **with** the repo's Developer ID
+> signing secrets are notarized and open normally. Older/ad-hoc builds (e.g.
+> v1.0.0–v1.0.1) trigger a Gatekeeper warning — right-click the app →
+> **Open** → **Open** to allow it once, or clear the quarantine flag with
+> `xattr -cr "/Applications/Moonlight Study.app"`.
 > Models are downloaded on first use — see the note below.
 
 ---

@@ -4,12 +4,14 @@ name: Release
 # then push a tag:  git tag v1.2.3 && git push origin v1.2.3
 #
 # This workflow re-runs the same quality gates as CI, builds the macOS DMG via
-# scripts/build_macos_release.sh (ad-hoc signed; see docs/releasing.md), and
-# publishes a GitHub Release with the DMG attached. The in-app update checker
-# keys off the `.dmg` asset of the latest release, so always attach it.
+# scripts/build_macos_release.sh, and publishes a GitHub Release with the DMG
+# attached. The in-app update checker keys off the `.dmg` asset of the latest
+# release, so always attach it.
 #
-# Until Developer ID signing/notarization secrets are configured, artifacts
-# are unsigned — documented in the README's Download section.
+# Signing mode is auto-detected per run: when all five Apple secrets are
+# configured (see docs/releasing.md) the DMG is Developer-ID signed,
+# notarized, and stapled — Gatekeeper-clean, no right-click workaround.
+# Without them the build falls back to ad-hoc signing, exactly as before.
 
 on:
   push:
@@ -23,6 +25,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  KEYCHAIN_NAME: build.keychain
+  KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+
 jobs:
   macos-dmg:
     name: macOS DMG (${{ github.ref_name }})
@@ -33,6 +39,30 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
+
+      # Signed + notarized releases require ALL of these secrets to exist.
+      # Missing any one of them falls back to ad-hoc signing so releases
+      # keep shipping while the Apple side is still being set up.
+      - name: Detect signing mode
+        id: detect
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE_P12" ] \
+            && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] \
+            && [ -n "$APPLE_ID" ] \
+            && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] \
+            && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "▶ Apple signing secrets present — will sign + notarize."
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "▶ Apple signing secrets missing — falling back to ad-hoc signing."
+          fi
 
       - name: Read app version from pubspec
         id: version
@@ -61,10 +91,140 @@ jobs:
       - name: Run unit tests
         run: flutter test test/navigation_test.dart test/pomodoro_test.dart test/latex_syntax_test.dart test/error_handler_test.dart test/model_catalog_test.dart test/app_settings_test.dart test/chunking_test.dart test/rag_keyword_test.dart test/onboarding_test.dart test/shared_widgets_test.dart test/update_service_test.dart test/db_migration_test.dart
 
-      # Ad-hoc signed (SKIP_NOTARY=1): no Apple cert needed on the runner.
-      # Produces dist/Moonlight Study-<version>.dmg
+      # Provision a per-run keychain holding the Developer ID Application
+      # certificate, then register the notarytool credentials profile the
+      # build script expects (`APPLE_PROFILE=notarytool`).
+      - name: Import signing certificate
+        if: steps.detect.outputs.signed == 'true'
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # Random password unless one is configured; never printed.
+          if [ -z "$KEYCHAIN_PASSWORD" ]; then
+            KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          fi
+
+          CERT_FILE="$(mktemp /tmp/certificate_XXXXXX.p12)"
+          trap 'rm -f "$CERT_FILE"' EXIT
+          # APPLE_CERTIFICATE_P12 is the base64 of the Developer ID .p12.
+          # A failed/empty decode is caught by the size guard below.
+          printf '%s' "$APPLE_CERTIFICATE_P12" | base64 --decode > "$CERT_FILE"
+          [ -s "$CERT_FILE" ] || { echo "P12 decode failed" >&2; exit 1; }
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_NAME"
+
+          security import "$CERT_FILE" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_NAME"
+          security list-keychain -d user -s "$KEYCHAIN_NAME" \
+            login.keychain-db 2>/dev/null || true
+
+          # Let codesign access the key without an interactive prompt.
+          security set-key-partition-list \
+            -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+
+          # Make it the default so `security find-identity -v -p codesigning`
+          # (inside build_macos_release.sh) discovers the Developer ID.
+          security default-keychain -s "$KEYCHAIN_NAME"
+
+          IDENTITY_COUNT="$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" | grep -c 'Developer ID Application' || true)"
+          if [ "$IDENTITY_COUNT" -lt 1 ]; then
+            echo "✗ No 'Developer ID Application' identity found in the imported certificate." >&2
+            security find-identity -v -p codesigning "$KEYCHAIN_NAME" || true
+            exit 1
+          fi
+          echo "▶ Developer ID identity imported and unlocked."
+
+          # Register the notarytool keychain profile (must be the default
+          # keychain so it survives to the build script's submit step).
+          xcrun notarytool store-credentials notarytool \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD"
+
+          # NOTE: do not reset keychain settings here — the 6-hour no-timeout
+          # set at creation must survive until notarization runs later in the
+          # build, or the keychain auto-locks mid-release.
+
+      - name: Write release notes
+        env:
+          SIGNED: ${{ steps.detect.outputs.signed }}
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$SIGNED" = "true" ]; then
+            cat > release-notes.md <<'NOTES'
+          **Moonlight Study ${VERSION}** — a local, offline AI study companion with a coffee + lo-fi soul.
+
+          ## Install (macOS)
+          1. Download **Moonlight Study-${VERSION}.dmg** below.
+          2. Open the DMG and drag **Moonlight Study** into **Applications**.
+          3. Launch it — the app is **signed and notarized**, so Gatekeeper
+             opens it normally (no right-click needed).
+
+          ## First run
+          - The AI runs **100% on-device** (embedded llama.cpp). On first use the
+            app downloads a small GGUF model of your choice from the **Models**
+            screen (a few hundred MB, cached locally).
+          - Everything else — documents, notes, flashcards, memory — stays local.
+
+          ## What's inside
+          See the [README](https://github.com/${REPO}#readme) for features, the
+          model catalog, and platform requirements.
+          NOTES
+          else
+            cat > release-notes.md <<'NOTES'
+          **Moonlight Study ${VERSION}** — a local, offline AI study companion with a coffee + lo-fi soul.
+
+          ## Install (macOS)
+          1. Download **Moonlight Study-${VERSION}.dmg** below.
+          2. Open the DMG and drag **Moonlight Study** into **Applications**.
+          3. First launch: right-click the app → **Open** → **Open** (one time only).
+
+          > **Unsigned build notice.** This artifact is ad-hoc signed, so macOS
+          > Gatekeeper may warn that the app "cannot be verified". That is
+          > expected until Developer ID notarization is configured — see the
+          > [Download section of the README](https://github.com/${REPO}#download).
+          > To clear the warning from a terminal:
+          > `xattr -cr "/Applications/Moonlight Study.app"`
+
+          ## First run
+          - The AI runs **100% on-device** (embedded llama.cpp). On first use the
+            app downloads a small GGUF model of your choice from the **Models**
+            screen (a few hundred MB, cached locally).
+          - Everything else — documents, notes, flashcards, memory — stays local.
+
+          ## What's inside
+          See the [README](https://github.com/${REPO}#readme) for features, the
+          model catalog, and platform requirements.
+          NOTES
+          fi
+          # The heredocs above are quoted (no expansion), so fill in the
+          # placeholders explicitly. Use | as the delimiter: REPO contains /.
+          sed -i '' \
+            -e "s|\\${VERSION}|${VERSION}|g" \
+            -e "s|\\${REPO}|${REPO}|g" \
+            release-notes.md
+          # Fail the release if any placeholder survived.
+          if grep -q '\${' release-notes.md; then
+            echo "✗ Unexpanded placeholder in release notes" >&2
+            exit 1
+          fi
+          echo "▶ release-notes.md written (signed=$SIGNED)"
+
+      # SKIP_NOTARY=0 → Developer ID sign + notarize + staple (needs secrets).
+      # SKIP_NOTARY=1 → ad-hoc sign, as before. The script handles both.
       - name: Build DMG
-        run: SKIP_NOTARY=1 ./scripts/build_macos_release.sh
+        run: SKIP_NOTARY=${{ steps.detect.outputs.signed == 'true' && '0' || '1' }} ./scripts/build_macos_release.sh
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
@@ -80,27 +240,4 @@ jobs:
           files: app/dist/*.dmg
           fail_on_unmatched_files: true
           generate_release_notes: true
-          body: |
-            **Moonlight Study ${{ steps.version.outputs.version }}** — a local, offline AI study companion with a coffee + lo-fi soul.
-
-            ## Install (macOS)
-            1. Download **Moonlight Study-${{ steps.version.outputs.version }}.dmg** below.
-            2. Open the DMG and drag **Moonlight Study** into **Applications**.
-            3. First launch: right-click the app → **Open** → **Open** (one time only).
-
-            > **Unsigned build notice.** This artifact is ad-hoc signed, so macOS
-            > Gatekeeper may warn that the app "cannot be verified". That is
-            > expected until Developer ID notarization is wired up — see the
-            > [Download section of the README](https://github.com/${{ github.repository }}#download).
-            > To clear the warning from a terminal:
-            > `xattr -cr "/Applications/Moonlight Study.app"`
-
-            ## First run
-            - The AI runs **100% on-device** (embedded llama.cpp). On first use the
-              app downloads a small GGUF model of your choice from the **Models**
-              screen (a few hundred MB, cached locally).
-            - Everything else — documents, notes, flashcards, memory — stays local.
-
-            ## What's inside
-            See the [README](https://github.com/${{ github.repository }}#readme) for
-            features, the model catalog, and platform requirements.
+          body_path: app/release-notes.md

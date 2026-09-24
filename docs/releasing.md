@@ -20,21 +20,51 @@ Production macOS artifacts are signed, notarized, and shipped as a drag-to-
 
 ## CI release pipeline
 
-Pushing a tag matching `v*` (e.g. `v1.0.0`) triggers
+Pushing a tag matching `v*` (e.g. `v1.0.1`) triggers
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which on a
 `macos-latest` runner:
 
 1. Runs the same gates as regular CI — `flutter analyze` and the offline unit
 test suite — so a release can never go out broken.
-2. Builds the DMG with `SKIP_NOTARY=1 ./scripts/build_macos_release.sh`
-(ad-hoc signing, no Apple Developer cert required).
-3. Publishes a GitHub Release on the tag with the DMG attached (the app's
+2. Detects whether the five Apple signing secrets are configured.
+3. If they are: imports the Developer ID certificate into a per-run keychain,
+builds the DMG with `SKIP_NOTARY=0 ./scripts/build_macos_release.sh`
+(signed → notarized → stapled), and publishes release notes saying so.
+4. If not: builds with `SKIP_NOTARY=1` (ad-hoc signing, no Apple cert
+required) and publishes notes with the Gatekeeper workaround.
+5. Publishes a GitHub Release on the tag with the DMG attached (the app's
 built-in updater keys off the `.dmg` asset, so direct download links work).
 
-Until Developer ID signing secrets (`APPLE_CERTIFICATE_P12`,
-`APPLE_CERTIFICATE_PASSWORD`, notarytool keychain profile) are added as repo
-secrets, artifacts are **unsigned/ad-hoc** — see the Gatekeeper note in the
-README's [Download](README.md#download) section.
+Until Developer ID signing secrets are added as repo secrets, artifacts are
+**unsigned/ad-hoc** — see the Gatekeeper note in the README's
+[Download](README.md#download) section. Once the secrets below are set, the
+**next tag-push automatically produces signed, notarized, stapled DMGs**
+with no workflow changes.
+
+## One-time repo secrets setup
+
+Configure these in **repo Settings → Secrets and variables → Actions**. When
+all five exist, the release workflow switches from ad-hoc to
+signed-and-notarized automatically (any missing secret → ad-hoc fallback):
+
+| Secret | Value |
+| --- | --- |
+| `APPLE_CERTIFICATE_P12` | Base64 of the **Developer ID Application** `.p12` export. Export the cert + private key from Keychain Access, then `base64 -i developerID_application.p12 \| pbcopy` and paste. |
+| `APPLE_CERTIFICATE_PASSWORD` | The password you set when exporting the `.p12`. |
+| `APPLE_ID` | The Apple ID email that owns the Developer account. |
+| `APPLE_APP_SPECIFIC_PASSWORD` | Create at [appleid.apple.com](https://appleid.apple.com/account/manage) → Sign-In and Security → App-Specific Passwords. |
+| `APPLE_TEAM_ID` | Your 10-character Team ID ([developer.apple.com/account](https://developer.apple.com/account) → Membership details). |
+
+Optional: `KEYCHAIN_PASSWORD` — the CI keychain password; leave unset and the
+workflow generates a random one per run.
+
+Notes on safety:
+
+- The `.p12` is the only high-value secret — it can sign as your team. Never
+  commit it, and revoke + re-issue from the Apple Developer portal if it ever
+  leaks.
+- GitHub masks secret values in logs; the workflow never echoes them.
+- The CI keychain is created per-run and dies with the runner.
 
 ## Local notarized releases
 
