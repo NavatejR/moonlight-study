@@ -211,11 +211,11 @@ jobs:
           # The heredocs above are quoted (no expansion), so fill in the
           # placeholders explicitly. Use | as the delimiter: REPO contains /.
           sed -i '' \
-            -e "s|\\${VERSION}|${VERSION}|g" \
-            -e "s|\\${REPO}|${REPO}|g" \
+            -e "s|[$][{]VERSION[}]|${VERSION}|g" \
+            -e "s|[$][{]REPO[}]|${REPO}|g" \
             release-notes.md
           # Fail the release if any placeholder survived.
-          if grep -q '\${' release-notes.md; then
+          if grep -q '[$][{]' release-notes.md; then
             echo "✗ Unexpanded placeholder in release notes" >&2
             exit 1
           fi
