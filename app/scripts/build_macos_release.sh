@@ -53,10 +53,32 @@ else
   echo "▶ Signing with: $IDENTITY"
 fi
 
-# Hardened runtime + secure timestamp (required for notarization).
-codesign --force --options runtime --timestamp --deep \
-  --entitlements macos/Runner/Release.entitlements \
-  --sign "$IDENTITY" "$BUILD_APP"
+# Re-sign nested frameworks/bundles innermost-first so nothing inside the
+# bundle keeps a foreign (different Team ID) signature. This is what notary
+# expects — and without it, hardened-runtime library validation rejects the
+# mismatched nested signature at launch (the v1.0.0 dyld crash: PDFium kept
+# its distributor's Team ID while the app binary was ad-hoc).
+find "$BUILD_APP" -depth -type d \( -name '*.framework' -o -name '*.appex' \) \
+  -print0 | while IFS= read -r -d '' fw; do
+    echo "▶ Re-signing nested bundle: ${fw#"$BUILD_APP"/}"
+    codesign --force --timestamp --sign "$IDENTITY" "$fw"
+  done
+
+if [ "$SKIP_NOTARY" = "1" ]; then
+  # Ad-hoc, unsigned distribution: do NOT enable the hardened runtime.
+  # Library validation (implied by `--options runtime`) aborts at launch when
+  # a nested binary's Team ID differs from the main executable's — and an
+  # ad-hoc signature has no Team ID at all.
+  codesign --force --deep \
+    --entitlements macos/Runner/Release.entitlements \
+    --sign "$IDENTITY" "$BUILD_APP"
+else
+  # Hardened runtime + secure timestamp are required for notarization; the
+  # explicit nested re-signing above keeps library validation satisfied.
+  codesign --force --options runtime --timestamp --deep \
+    --entitlements macos/Runner/Release.entitlements \
+    --sign "$IDENTITY" "$BUILD_APP"
+fi
 echo "▶ Verification:"
 codesign --verify --deep --strict --verbose=2 "$BUILD_APP"
 

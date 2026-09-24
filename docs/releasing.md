@@ -53,13 +53,17 @@ cd app
 What the script does:
 
 1. `flutter build macos --release`
-2. Re-signs the `.app` with the Developer ID identity, **hardened runtime**
+2. **Re-signs every nested framework/bundle innermost-first** (pdfrx's
+   PDFium, llamadart's llama frameworks, …). Nested code must never keep a
+   foreign Team-ID signature — see the gotchas below.
+3. Re-signs the `.app` with the Developer ID identity, **hardened runtime**
    (`--options runtime`) and the `Release.entitlements`, including a secure
-   timestamp — all required for notarization.
-3. `xcrun notarytool submit --wait` then staples the notarization ticket.
-4. Builds `dist/Moonlight Study-<version>.dmg` with a drag-to-Applications
+   timestamp — all required for notarization. With `SKIP_NOTARY=1` the app is
+   signed ad-hoc **without** the hardened runtime instead (see gotchas).
+4. `xcrun notarytool submit --wait` then staples the notarization ticket.
+5. Builds `dist/Moonlight Study-<version>.dmg` with a drag-to-Applications
    layout (`hdiutil`, no extra brew tools). Set `SKIP_NOTARY=1` to skip steps
-   2–3 for a quick unsigned DMG.
+   3–4 for a quick unsigned DMG.
 
 Sandbox & network: `macos/Runner/Release.entitlements` keeps
 `com.apple.security.app-sandbox`, `network.client` (model downloads), and
@@ -69,9 +73,17 @@ config has `ENABLE_HARDENED_RUNTIME = YES`; keep it that way or notarization
 
 ## Notarization gotchas
 
-- **Nested code** (llamadart/llama frameworks) must be signed — the script's
-  `--deep` re-sign covers bundled frameworks; if you change how native libs are
-  packaged, re-verify with `codesign --verify --deep --strict`.
+- **Nested code** (PDFium, llamadart/llama frameworks) must be re-signed — a
+  single `--deep` pass over the `.app` is NOT enough: codesign treats an
+  already-valid nested framework as satisfied and leaves its old signature
+  (often the distributor's real Team ID). The script therefore signs every
+  nested `.framework` explicitly, innermost-first, before the app itself.
+- **Ad-hoc builds must NOT enable the hardened runtime.** `--options runtime`
+  turns on library validation, which aborts at launch when a nested binary's
+  Team ID differs from the main executable's — and an ad-hoc signature has no
+  Team ID at all. That is exactly how the v1.0.0 DMG crashed with
+  `Library not loaded: @rpath/PDFium.framework/PDFium … different Team IDs`.
+  The hardened runtime is only required on the notarized (Developer ID) path.
 - Model GGUFs are **downloaded at runtime**, never bundled, so the DMG stays
   small and needs no special entitlement.
 - Verify a final gate with:
@@ -89,5 +101,6 @@ set up signing certs for those platforms separately if distributing broadly.
    Xcode `MARKETING_VERSION`).
 2. Build + notarize → `dist/`.
 3. Test the DMG from a clean machine profile.
-4. Tag + cut a GitHub Release and upload the DMG (see [auto-update](auto-update.md)
-   once wired).
+4. Tag + cut a GitHub Release and upload the DMG — pushing a `v*` tag does
+   this automatically (see [CI release pipeline](#ci-release-pipeline) and
+   [auto-update](auto-update.md)).
