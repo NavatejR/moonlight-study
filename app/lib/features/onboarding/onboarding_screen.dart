@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +7,7 @@ import '../../core/ai/model_catalog.dart';
 import '../../core/db/app_database.dart';
 import '../../core/settings/settings_storage.dart';
 import '../../core/theme/colors.dart';
+import '../../docs/rag_service.dart';
 import '../../shared/widgets/coffee_card.dart';
 import 'sample_import.dart';
 
@@ -29,15 +32,30 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   Future<void> _finish() async {
     setState(() => _importing = true);
-    
-    final db = ref.read(appDatabaseProvider);
-    await importSampleDocument(db, ref);
-    
+
+    // 1. Flip the setting FIRST: app.dart watches settingsProvider and swaps
+    //    home: to HomeShell on the next frame, so the home page is already on
+    //    screen while the import continues.
     await ref
         .read(settingsProvider.notifier)
         .apply((s) => s.copyWith(onboardingComplete: true));
-    
-    if (mounted) {
+
+    // 2. Import the sample document in the background. It is failure-tolerant
+    //    (all errors are caught and logged inside), and it must not block the
+    //    transition to home. Dependencies are read synchronously so the future
+    //    touches nothing ref-like after this widget is disposed by the home:
+    //    swap above.
+    final db = ref.read(appDatabaseProvider);
+    final rag = ref.read(ragServiceProvider);
+    unawaited(importSampleDocument(db, rag));
+
+    // 3. Only pop when there IS a route above us. On first install this
+    //    screen IS the root route: the home: swap already replaced it, and a
+    //    blind pop here removed the freshly mounted HomeShell and left an
+    //    empty navigator — the "black window until restart" bug. From the
+    //    Settings → Replay tutorial flow a real route sits above, and the
+    //    pop correctly returns to settings.
+    if (mounted && Navigator.of(context).canPop()) {
       Navigator.of(context).pop(true);
     }
   }

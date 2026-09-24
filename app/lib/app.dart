@@ -8,7 +8,9 @@ import 'core/memory/memory_service.dart';
 import 'core/settings/settings_storage.dart';
 import 'core/state/theme_mode.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/colors.dart';
 import 'core/updates/update_service.dart';
+import 'core/window/desktop_window.dart';
 import 'docs/data_repair.dart';
 import 'docs/rag_service.dart';
 import 'features/home/home_shell.dart';
@@ -24,6 +26,15 @@ class StudyCompanionApp extends ConsumerWidget {
     _bootstrap(ref);
 
     final settings = ref.watch(settingsProvider);
+    final isDark = ref.watch(themeModeProvider);
+
+    // Keep the native macOS title-bar strip matched to the theme. Side-effect
+    // only (a platform channel push, no rebuild dependency), so it lives in a
+    // post-frame callback instead of the build tree.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      DesktopWindow.setWindowBackgroundColor(
+          isDark ? CoffeeColors.warmDark : CoffeeColors.crema);
+    });
 
     return MaterialApp(
       title: 'Moonlight Study',

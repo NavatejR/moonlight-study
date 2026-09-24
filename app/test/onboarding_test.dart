@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:study_companion/core/db/app_database.dart';
+import 'package:study_companion/core/settings/settings_storage.dart';
 import 'package:study_companion/features/onboarding/onboarding_screen.dart';
 
 import 'helpers/test_db.dart';
@@ -72,5 +73,26 @@ void main() {
     // don't pumpAndSettle here because the import I/O never resolves in tests.
     await tester.pump();
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('finishing onboarding from the root route keeps the navigator intact',
+      (tester) async {
+    await pumpOnboarding(tester);
+
+    await tester.tap(find.text('Skip tutorial'));
+    // Let the settings flip settle; the background import never completes in
+    // tests (path_provider is unstubbed), which mirrors production timing.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // The setting flipped so app.dart swaps home: to HomeShell.
+    final settings = container.read(settingsProvider).value;
+    expect(settings?.onboardingComplete, isTrue);
+
+    // The navigator still has its root route: finishing onboarding must never
+    // pop the root (that emptied the navigator and blacked out the window).
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    expect(navigator.canPop(), isFalse);
+    expect(tester.takeException(), isNull);
   });
 }

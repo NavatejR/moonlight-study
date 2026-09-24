@@ -35,16 +35,23 @@ Future<void> main() async {
   if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
     try {
       await windowManager.ensureInitialized();
-      const options = WindowOptions(
+      final isMacOS = Platform.isMacOS;
+      final options = WindowOptions(
         size: Size(1180, 760),
         minimumSize: Size(760, 560),
         center: true,
         // Opaque backing: a transparent frameless window renders BLACK if the
         // Metal surface ever stalls (e.g. during a heavy model load), hiding
         // the app behind an unreadable void. A solid color always shows the
-        // themed background / last frame instead.
-        backgroundColor: Color(0xFF211D19),
-        titleBarStyle: TitleBarStyle.hidden,
+        // themed background / last frame instead. Matches the default dark
+        // theme ("midnight espresso") until the theme provider syncs it.
+        backgroundColor: const Color(0xFF241A11),
+        // macOS: the native title-bar strip is configured natively as a
+        // separate, theme-colored region above the content (see
+        // MainFlutterWindow.swift) — passing a titleBarStyle here would
+        // override it (hidden re-adds fullSizeContentView). Windows/Linux
+        // draw their own bar in Flutter, so their native bar is hidden.
+        titleBarStyle: isMacOS ? null : TitleBarStyle.hidden,
         title: 'Moonlight Study',
       );
       await windowManager.waitUntilReadyToShow(options, () async {

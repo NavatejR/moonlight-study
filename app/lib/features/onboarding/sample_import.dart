@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../../core/db/app_database.dart';
@@ -14,7 +13,11 @@ import '../../docs/rag_service.dart';
 /// Copies assets/docs/getting_started.pdf into the app's document folder,
 /// creates a "Welcome" notebook, and indexes the document so it's immediately
 /// queryable by the AI assistant.
-Future<void> importSampleDocument(AppDatabase db, WidgetRef ref) async {
+///
+/// Takes plain dependencies (no widget/ref handles) so it can also run in a
+/// background future after the onboarding widget has been disposed — the home
+/// shell is already on screen by the time the import finishes.
+Future<void> importSampleDocument(AppDatabase db, RagService ragService) async {
   final logger = AppLogger();
   
   try {
@@ -26,7 +29,6 @@ Future<void> importSampleDocument(AppDatabase db, WidgetRef ref) async {
     await tempFile.writeAsBytes(bytes.buffer.asUint8List());
 
     final docService = DocumentService();
-    final ragService = ref.read(ragServiceProvider);
 
     var welcomeNotebook = await (db.select(db.notebooks)
           ..where((n) => n.title.equals('Welcome')))

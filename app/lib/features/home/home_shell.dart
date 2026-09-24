@@ -47,7 +47,9 @@ class HomeShell extends ConsumerWidget {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (DesktopWindow.isDesktop) const _WindowTitleBar(),
+            // macOS: the native title-bar strip sits above the window content
+            // (separate NSWindow region) — no Flutter-drawn bar here.
+            if (DesktopWindow.isWindowsOrLinux) const _WindowTitleBar(),
             Expanded(
               child: Row(
                 children: [
@@ -68,8 +70,9 @@ class HomeShell extends ConsumerWidget {
   }
 }
 
-/// The app's own window chrome: a full-width, theme-matched title bar above
-/// the main UI. Entire strip is draggable; double-click toggles maximize.
+/// Window chrome for platforms without a native themed strip (Windows/Linux):
+/// a full-width, theme-matched bar above the main UI. Entire strip is
+/// draggable; double-click toggles maximize. macOS uses the native strip.
 class _WindowTitleBar extends StatelessWidget {
   const _WindowTitleBar();
 
